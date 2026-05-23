@@ -9,13 +9,8 @@ __pycache__/
 .coverage
 coverage.xml
 htmlcov/
-.cache/
-data/indexes/
-data/jobs/*.parquet
-data/resumes/*.parquet
-evals/runs/*/
-!evals/runs/.gitkeep
-*.tantivy/
 .DS_Store
 dist/
 build/
+evals/runs/*/
+!evals/runs/.gitkeep
