@@ -107,7 +107,7 @@ jobs:
       - name: Build image
         run: docker build -t marketplace-matching-agent:${{ github.sha }} .
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: marketplace-matching-agent:${{ github.sha }}
           severity: CRITICAL,HIGH
