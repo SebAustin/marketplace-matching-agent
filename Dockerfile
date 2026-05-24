@@ -12,7 +12,13 @@ FROM python:3.12.4-slim-bookworm
 
 RUN apt-get update \
     && apt-get upgrade -y \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir --upgrade \
+        "setuptools>=78.1.1" \
+        "wheel>=0.46.2" \
+        "jaraco.context>=6.1.0" \
+    && pip uninstall -y pip \
+    && rm -rf /root/.cache
 
 WORKDIR /app
 
