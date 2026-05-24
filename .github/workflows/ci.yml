@@ -16,9 +16,6 @@ jobs:
       qdrant:
         image: qdrant/qdrant:v1.12.1
         ports: ["6333:6333"]
-        options: >-
-          --health-cmd "curl -fsS http://localhost:6333/readyz || exit 1"
-          --health-interval 5s --health-timeout 3s --health-retries 20
       postgres:
         image: postgres:16.4
         env:
@@ -48,6 +45,17 @@ jobs:
         env:
           PGPASSWORD: matchdev
         run: psql -h localhost -U postgres -d marketplace -f infra/postgres/init.sql
+      - name: Wait for Qdrant
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:6333/readyz >/dev/null; then
+              echo "Qdrant ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Qdrant failed to become ready"
+          exit 1
       - name: pytest with 85% coverage gate
         env:
           QDRANT_URL: http://localhost:6333
