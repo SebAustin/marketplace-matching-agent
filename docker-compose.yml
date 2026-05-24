@@ -6,6 +6,7 @@ services:
       - "6334:6334"
     volumes:
       - qdrant_data:/qdrant/storage
+
   postgres:
     image: postgres:16.4
     environment:

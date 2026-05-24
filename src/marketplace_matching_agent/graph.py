@@ -1,30 +1,43 @@
-from typing import Any
+"""LangGraph supervisor graph."""
+
+from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from marketplace_matching_agent.agents.evaluation import run_evaluation
+from marketplace_matching_agent.agents.fairness import run_fairness
+from marketplace_matching_agent.agents.search import run_search
 from marketplace_matching_agent.state import MatchState
 
 
 async def search_node(state: MatchState) -> MatchState:
-    raise NotImplementedError
+    """Search node wrapper."""
+    return await run_search(state)
 
 
 async def evaluation_node(state: MatchState) -> MatchState:
-    raise NotImplementedError
+    """Evaluation node wrapper."""
+    return await run_evaluation(state)
 
 
 async def fairness_node(state: MatchState) -> MatchState:
-    raise NotImplementedError
+    """Fairness node wrapper."""
+    return await run_fairness(state)
 
 
-def build_supervisor() -> CompiledStateGraph[Any, Any, Any, Any]:
-    g = StateGraph(MatchState)
-    g.add_node("search", search_node)
-    g.add_node("evaluation", evaluation_node)
-    g.add_node("fairness", fairness_node)
-    g.add_edge(START, "search")
-    g.add_edge("search", "evaluation")
-    g.add_edge("evaluation", "fairness")
-    g.add_edge("fairness", END)
-    return g.compile()
+def build_supervisor() -> CompiledStateGraph:
+    """Build and compile the match supervisor graph.
+
+    Returns:
+        Compiled StateGraph: START -> search -> evaluation -> fairness -> END.
+    """
+    graph = StateGraph(MatchState)
+    graph.add_node("search", search_node)
+    graph.add_node("evaluation", evaluation_node)
+    graph.add_node("fairness", fairness_node)
+    graph.add_edge(START, "search")
+    graph.add_edge("search", "evaluation")
+    graph.add_edge("evaluation", "fairness")
+    graph.add_edge("fairness", END)
+    return graph.compile()

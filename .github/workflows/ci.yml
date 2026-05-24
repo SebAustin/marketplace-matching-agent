@@ -1,25 +1,107 @@
 name: ci
-
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   lint-type-test:
     runs-on: ubuntu-24.04
+    services:
+      qdrant:
+        image: qdrant/qdrant:v1.12.1
+        ports: ["6333:6333"]
+        options: >-
+          --health-cmd "curl -fsS http://localhost:6333/readyz || exit 1"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_PASSWORD: matchdev
+          POSTGRES_DB: marketplace
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
+      - name: Set up uv + Python 3.12.4
+        uses: astral-sh/setup-uv@v4
         with:
+          version: "0.5.11"
           python-version: "3.12.4"
           enable-cache: true
       - name: uv sync
         run: uv sync --all-extras --frozen
       - name: ruff check
         run: uv run ruff check .
+      - name: ruff format --check
+        run: uv run ruff format --check .
       - name: mypy --strict
-        run: uv run mypy --strict src
+        run: uv run mypy --strict src tests evals mcp_servers
+      - name: Init Postgres schema
+        env:
+          PGPASSWORD: matchdev
+        run: psql -h localhost -U postgres -d marketplace -f infra/postgres/init.sql
       - name: pytest with 85% coverage gate
-        run: uv run pytest -q
+        env:
+          QDRANT_URL: http://localhost:6333
+          POSTGRES_URL: postgresql://postgres:matchdev@localhost:5432/marketplace
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
+        run: uv run pytest -q --cov=src --cov=mcp_servers --cov-fail-under=85 --cov-report=xml
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-xml
+          path: coverage.xml
+
+  eval-smoke:
+    if: github.event_name == 'pull_request'
+    needs: lint-type-test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v4
+        with:
+          version: "0.5.11"
+          python-version: "3.12.4"
+          enable-cache: true
+      - run: uv sync --all-extras --frozen
+      - name: Run smoke eval (--limit 10)
+        env:
+          EVAL_USE_CACHE: "1"
+          EVAL_COST_CAP_USD: "1.00"
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run python evals/run_eval.py --mode both --limit 10 --output-dir evals/runs/pr
+      - name: Compute delta vs main
+        id: delta
+        run: python scripts/eval_delta.py evals/runs/pr/summary.json main > delta.md
+      - name: Sticky PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: eval-smoke
+          path: delta.md
+
+  build-scan:
+    needs: lint-type-test
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t marketplace-matching-agent:${{ github.sha }} .
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: marketplace-matching-agent:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true

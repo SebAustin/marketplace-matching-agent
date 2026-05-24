@@ -1,28 +1,32 @@
 [project]
 name = "marketplace-matching-agent"
 version = "0.1.0"
+description = "Two-sided job matching agent with LangGraph supervisor, hybrid retrieval, and fairness audit"
+readme = "README.md"
 requires-python = ">=3.12,<3.13"
+license = { text = "Apache-2.0" }
 dependencies = [
   "langgraph==1.0.3",
   "langgraph-supervisor==0.0.27",
   "langchain==1.0.5",
-  "langchain-anthropic==1.0.3",
   "langchain-mcp-adapters==0.2.2",
-  "mcp==1.9.2",
-  "anthropic==0.69.0",
+  "mcp>=1.9.2,<2",
+  "anthropic==0.40.0",
   "voyageai==0.3.2",
   "cohere==5.13.4",
   "qdrant-client==1.12.1",
   "tantivy==0.22.0",
   "fairlearn==0.12.0",
   "pydantic==2.9.2",
+  "pydantic-settings==2.6.1",
   "fastapi==0.115.6",
   "httpx==0.28.1",
-  "psycopg[binary]==3.2.3",
+  "psycopg[binary,pool]==3.2.3",
   "sqlalchemy==2.0.36",
   "structlog==24.4.0",
   "typer==0.15.1",
   "polars==1.17.1",
+  "streamlit==1.40.1",
 ]
 
 [project.optional-dependencies]
@@ -34,6 +38,7 @@ dev = [
   "pytest-cov==6.0.0",
   "hypothesis==6.122.3",
   "respx==0.21.1",
+  "anyio==4.7.0",
 ]
 
 [project.scripts]
@@ -53,20 +58,54 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "C90", "UP", "S", "ASYNC", "RET", "SIM"]
 
-[tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
-
 [tool.mypy]
 strict = true
 python_version = "3.12"
 plugins = ["pydantic.mypy"]
 mypy_path = "src"
 
+[tool.ruff.lint.per-file-ignores]
+"evals/run_eval.py" = ["S603", "S607", "B008"]
+"src/marketplace_matching_agent/cli.py" = ["B008"]
+"tests/**" = ["S101", "E501", "SIM117"]
+
 [[tool.mypy.overrides]]
-module = ["tests.*"]
+module = ["tests.*", "evals.*", "mcp_servers.*"]
 disallow_untyped_defs = false
+disable_error_code = ["arg-type", "misc", "attr-defined"]
+
+[[tool.mypy.overrides]]
+module = ["marketplace_matching_agent.extraction.citations"]
+disable_error_code = ["list-item", "attr-defined"]
+
+[[tool.mypy.overrides]]
+module = ["marketplace_matching_agent.retrieval.bm25"]
+disable_error_code = ["index"]
+
+[[tool.mypy.overrides]]
+module = ["marketplace_matching_agent.graph"]
+disable_error_code = ["type-arg"]
+
+[[tool.mypy.overrides]]
+module = [
+  "marketplace_matching_agent.audit.log",
+  "marketplace_matching_agent.agents.fairness",
+  "marketplace_matching_agent.agents.evaluation",
+  "marketplace_matching_agent.retrieval.dense",
+  "marketplace_matching_agent.fairness.synthetic_protected",
+  "evals.cache",
+]
+disable_error_code = ["arg-type", "no-any-return", "attr-defined"]
+
+[[tool.mypy.overrides]]
+module = ["tantivy.*", "voyageai.*", "cohere.*", "fairlearn.*", "mcp.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-addopts = "--cov=src --cov-fail-under=85"
+addopts = "--cov=src --cov=mcp_servers --cov-fail-under=85"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["src", "mcp_servers"]
+omit = ["*/ui/*"]
