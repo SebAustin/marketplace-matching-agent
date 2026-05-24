@@ -1,0 +1,9 @@
+collections:
+  - name: jobs_v1
+    vectors:
+      size: 256
+      distance: Cosine
+  - name: candidates_v1
+    vectors:
+      size: 256
+      distance: Cosine

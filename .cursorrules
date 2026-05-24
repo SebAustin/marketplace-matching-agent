@@ -1,0 +1,41 @@
+# .cursorrules — marketplace-matching-agent
+# Author: Sebastien Henry (@SebAustin). Last updated: 2026-05-25.
+
+You are pair-programming with a senior AI engineer (19 yrs experience, 8 yrs Indeed).
+Write code as if it ships to production at LinkedIn, Indeed, or Airbnb tomorrow.
+
+## Stack (pinned, do not drift)
+- Python 3.12.4, managed by uv 0.5.x. Never use pip or poetry.
+- ruff 0.8.4 for lint+format. mypy 1.13 with --strict. pydantic 2.9 for all DTOs.
+- FastAPI 0.115, httpx 0.28 (async only). No requests, no aiohttp.
+- LangGraph 1.0.x StateGraph + langgraph-supervisor 0.0.27. No legacy AgentExecutor.
+- Anthropic SDK 0.40 (claude-sonnet-4-5-20251022 default; claude-opus-4-7 for judge).
+- Qdrant client 1.12, Tantivy 0.22, Cohere 5.13, Voyage 0.3 (voyage-3-large, dim=256 Matryoshka).
+- fairlearn 0.12 for audit primitives.
+- MCP spec 2025-11-25 via mcp 1.6 + langchain-mcp-adapters 0.3.
+
+## Architecture invariants
+- Supervisor = single LangGraph StateGraph. Two entry modes: "seeker", "recruiter".
+- Sub-agents are nodes, NOT separate processes: search → evaluation → fairness.
+- Skill Registry = 5 MCP servers. Tools via langchain-mcp-adapters.
+- State is MatchState TypedDict. Mutations return new dicts.
+
+## Fairness contract (HARD)
+- Every result list of length ≥ k MUST pass through fairness/audit.py before return.
+- 4/5ths rule impact ratio < 0.80 → trigger DetConstSort rebalance, log violation.
+- MinSkew@k computed over synthetic protected slices ONLY.
+- NEVER infer demographics from real names. Only synthetic_protected module.
+
+## Citation contract (HARD)
+- Every match rationale must include ≥ 3 CitedSpan objects.
+- Use citations={"enabled": True} on documents.
+
+## Audit contract (HARD)
+- Every supervisor invocation writes one row to audit_log with hash chain.
+
+## Forbidden patterns
+- print() in library code → use structlog 24.x.
+- bare except / except Exception → name the exception.
+- Hardcoded API keys → read from config Settings.
+- requests, aiohttp → httpx only.
+- pandas in hot path → polars or pure Python.
