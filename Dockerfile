@@ -1,14 +1,22 @@
-FROM python:3.12.4-slim
+FROM ghcr.io/astral-sh/uv:0.5.11-python3.12-bookworm-slim AS builder
 
 WORKDIR /app
-
-RUN pip install --no-cache-dir uv==0.5.11
 
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
 COPY mcp_servers ./mcp_servers
 
 RUN uv sync --frozen --no-dev
+
+FROM python:3.12.4-slim-bookworm
+
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY --from=builder /app /app
 
 ENV PATH="/app/.venv/bin:$PATH"
 
