@@ -46,18 +46,25 @@ def four_fifths_impact_ratio(selections: dict[str, int], pool: dict[str, int]) -
     return disadvantaged / advantaged if advantaged > 0 else 1.0
 
 
-def min_skew_at_k(ranked: list[dict[str, object]], protected_attr: str, k: int) -> float:
+def min_skew_at_k(
+    ranked: list[dict[str, object]],
+    protected_attr: str,
+    k: int,
+    desired_distribution: dict[str, float] | None = None,
+) -> float:
     """Compute MinSkew@k over ranked list.
 
     Args:
         ranked: Ranked items.
         protected_attr: Attribute key (unused; uses synthetic assign).
         k: Cutoff k.
+        desired_distribution: Target group proportions (default 50/50).
 
     Returns:
-        Minimum log skew across groups.
+        Minimum log skew across groups vs achievable top-k proportions.
     """
     _ = protected_attr
+    dist = desired_distribution or {"A": 0.5, "B": 0.5}
     top = ranked[:k]
     if not top:
         return 0.0
@@ -66,13 +73,13 @@ def min_skew_at_k(ranked: list[dict[str, object]], protected_attr: str, k: int) 
         g = _group(item)
         counts[g] = counts.get(g, 0) + 1
     total = len(top)
-    desired = 1.0 / max(len(counts), 1)
     skews: list[float] = []
-    for _g, count in counts.items():
-        actual = count / total
-        if desired > 0 and actual > 0:
-            skews.append(math.log(actual / desired))
-        else:
+    for group, target_frac in dist.items():
+        achievable = round(target_frac * k) / total if total > 0 else target_frac
+        actual = counts.get(group, 0) / total
+        if achievable > 0 and actual > 0:
+            skews.append(math.log(actual / achievable))
+        elif actual == 0 and achievable > 0:
             skews.append(-1.0)
     return min(skews) if skews else 0.0
 
@@ -112,7 +119,8 @@ def audit(ranked: list[dict[str, object]], k: int) -> FairnessReport:
         sel_counts[g] = sel_counts.get(g, 0) + 1
 
     impact = four_fifths_impact_ratio(sel_counts, pool_counts)
-    skew = min_skew_at_k(ranked, PROTECTED_ATTR, k)
+    desired = {"A": 0.5, "B": 0.5}
+    skew = min_skew_at_k(ranked, PROTECTED_ATTR, k, desired)
     gap = demographic_parity_gap(top, PROTECTED_ATTR)
     passed = impact >= 0.80 and abs(skew) <= 0.10
     return FairnessReport(

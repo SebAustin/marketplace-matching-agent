@@ -32,7 +32,8 @@ async def test_supervisor_invoke(mode: str) -> None:
     assert len(ranked) == 5
     rationales = out.get("rationales", [])
     assert len(rationales) == 5
-    for rationale in rationales:
+    for rationale, item in zip(rationales, ranked, strict=True):
+        assert rationale.item_id == str(item["id"])
         assert len(rationale.citations) >= 3
     report = out["fairness_report"]
     assert report.passed is True or report.rebalanced is True

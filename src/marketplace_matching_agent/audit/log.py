@@ -15,6 +15,8 @@ from pydantic import BaseModel
 class AuditRow(BaseModel):
     """Single audit log row."""
 
+    model_config = {"protected_namespaces": ()}
+
     mode: Literal["seeker", "recruiter"]
     query_hash: str
     prompt_version: str

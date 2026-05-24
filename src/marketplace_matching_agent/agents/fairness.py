@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import time
@@ -11,15 +12,34 @@ from psycopg import AsyncConnection, OperationalError
 
 from marketplace_matching_agent.audit.log import AuditRow, append
 from marketplace_matching_agent.config import get_settings
+from marketplace_matching_agent.extraction.citations import cite_match
 from marketplace_matching_agent.fairness.audit import audit
 from marketplace_matching_agent.fairness.detconstsort import rebalance
-from marketplace_matching_agent.state import MatchState
+from marketplace_matching_agent.state import MatchState, Rationale
 
 log = structlog.get_logger(__name__)
 
 
 def _query_hash(query: str) -> str:
     return hashlib.sha256(query.encode()).hexdigest()[:16]
+
+
+async def _sync_rationales(
+    state: MatchState,
+    ranked: list[dict[str, object]],
+    k: int,
+) -> list[Rationale]:
+    """Align rationales with final ranked list; cite any newly promoted items."""
+    existing = {r.item_id: r for r in state.get("rationales", [])}
+    counterparty = {"id": "query", "text": state["query"], "meta": {}}
+    rationales: list[Rationale] = []
+    for item in ranked[:k]:
+        item_id = str(item.get("id", ""))
+        if item_id in existing:
+            rationales.append(existing[item_id])
+        else:
+            rationales.append(await cite_match(state["query"], item, counterparty))
+    return rationales
 
 
 async def _append_audit(state: MatchState, report: object) -> str:
@@ -41,10 +61,19 @@ async def _append_audit(state: MatchState, report: object) -> str:
         fairness_violation=not getattr(report, "passed", True),
     )
     try:
-        async with await AsyncConnection.connect(settings.postgres_url) as conn:
-            return await append(conn, row)
-    except (OSError, OperationalError):
-        log.warning("audit_log_unavailable")
+        last_error: Exception | None = None
+        for attempt in range(5):
+            try:
+                async with await AsyncConnection.connect(settings.postgres_url) as conn:
+                    return await append(conn, row)
+            except (OSError, OperationalError) as exc:
+                last_error = exc
+                if attempt < 4:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+        log.warning("audit_log_unavailable", error=str(last_error))
+        return "offline"
+    except Exception as exc:
+        log.warning("audit_log_unavailable", error=str(exc))
         return "offline"
 
 
@@ -60,12 +89,16 @@ async def run_fairness(state: MatchState) -> MatchState:
     t0 = time.perf_counter()
     k = state.get("k", 5)
     ranked = list(state.get("ranked_items", []))
+    rebalance_pool = list(state.get("retrieved_items", ranked))
+    rationales = list(state.get("rationales", []))
     report = audit(ranked, k)
     if not report.passed:
-        ranked = rebalance(ranked, k)
+        ranked = rebalance(rebalance_pool, k)
         report = audit(ranked, k)
         report.rebalanced = True
-    audit_hash = await _append_audit(state, report)
+        rationales = await _sync_rationales(state, ranked, k)
+    final_ranked = ranked[:k]
+    audit_hash = await _append_audit({**state, "ranked_items": final_ranked}, report)
     latency_ms = (time.perf_counter() - t0) * 1000
     log.info(
         "fairness_node",
@@ -78,7 +111,8 @@ async def run_fairness(state: MatchState) -> MatchState:
     )
     return {
         **state,
-        "ranked_items": ranked[:k],
+        "ranked_items": final_ranked,
+        "rationales": rationales,
         "fairness_report": report,
         "audit_row_hash": audit_hash,
     }

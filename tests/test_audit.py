@@ -11,7 +11,7 @@ from psycopg import AsyncConnection, OperationalError
 from marketplace_matching_agent.audit.log import AuditRow, append, query, verify_chain
 
 POSTGRES_URL = os.environ.get(
-    "POSTGRES_URL", "postgresql://postgres:matchdev@localhost:5432/marketplace"
+    "POSTGRES_URL", "postgresql://postgres:matchdev@localhost:5433/marketplace"
 )
 
 

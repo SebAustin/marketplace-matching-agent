@@ -6,8 +6,11 @@
 
 ```bash
 git clone https://github.com/SebAustin/marketplace-matching-agent && cd marketplace-matching-agent
-docker compose up -d qdrant postgres
-uv sync && cp .env.example .env
+uv sync --all-extras
+cp .env.example .env
+docker compose up -d
+# Wait for Postgres to accept connections (port 5433 locally)
+until PGPASSWORD=matchdev psql -h localhost -p 5433 -U postgres -d marketplace -c "SELECT 1" >/dev/null 2>&1; do sleep 1; done
 uv run python scripts/ingest_jobs.py && uv run python scripts/ingest_resumes.py
 uv run marketplace-matching-agent --mode recruiter --query "5 backend engineers in Austin who know LangGraph"
 ```

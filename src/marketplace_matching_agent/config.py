@@ -10,13 +10,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Environment-backed settings."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        protected_namespaces=("settings_",),
+    )
 
     anthropic_api_key: str = ""
     voyage_api_key: str = ""
     cohere_api_key: str = ""
     qdrant_url: str = "http://localhost:6333"
-    postgres_url: str = "postgresql://postgres:matchdev@localhost:5432/marketplace"
+    postgres_url: str = "postgresql://postgres:matchdev@localhost:5433/marketplace"
     prompt_version: str = "v0.1.0"
     model_id: str = "claude-sonnet-4-5-20251022"
     embed_model: str = "voyage-3-large"
