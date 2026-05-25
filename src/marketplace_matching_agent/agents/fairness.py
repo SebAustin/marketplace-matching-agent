@@ -15,23 +15,25 @@ from marketplace_matching_agent.config import get_settings
 from marketplace_matching_agent.extraction.citations import cite_match
 from marketplace_matching_agent.fairness.audit import audit
 from marketplace_matching_agent.fairness.detconstsort import rebalance
-from marketplace_matching_agent.state import MatchState, Rationale
+from marketplace_matching_agent.state import FairnessReport, MatchState, MatchStateUpdate, Rationale
+from marketplace_matching_agent.types import ItemDict
 
 log = structlog.get_logger(__name__)
 
 
 def _query_hash(query: str) -> str:
+    """Return a short stable hash for log correlation."""
     return hashlib.sha256(query.encode()).hexdigest()[:16]
 
 
 async def _sync_rationales(
     state: MatchState,
-    ranked: list[dict[str, object]],
+    ranked: list[ItemDict],
     k: int,
 ) -> list[Rationale]:
     """Align rationales with final ranked list; cite any newly promoted items."""
     existing = {r.item_id: r for r in state.get("rationales", [])}
-    counterparty = {"id": "query", "text": state["query"], "meta": {}}
+    counterparty: ItemDict = {"id": "query", "text": state["query"], "meta": {}}
     rationales: list[Rationale] = []
     for item in ranked[:k]:
         item_id = str(item.get("id", ""))
@@ -42,11 +44,13 @@ async def _sync_rationales(
     return rationales
 
 
-async def _append_audit(state: MatchState, report: object) -> str:
+async def _append_audit(state: MatchState, report: FairnessReport) -> str:
+    """Persist append-only audit row; return hash or offline sentinel."""
     settings = get_settings()
     ranked = state.get("ranked_items", [])
     rerank_scores = {
-        str(item.get("id", "")): float(item.get("rerank_score", 0.0)) for item in ranked
+        str(item.get("id", "")): float(item.get("rerank_score", item.get("score", 0.0)))
+        for item in ranked
     }
     row = AuditRow(
         mode=state["mode"],
@@ -55,10 +59,8 @@ async def _append_audit(state: MatchState, report: object) -> str:
         model_id=settings.model_id,
         retrieved_doc_ids=[str(i.get("id", "")) for i in state.get("retrieved_items", [])],
         rerank_scores=rerank_scores,
-        fairness_metrics=json.loads(report.model_dump_json())
-        if hasattr(report, "model_dump_json")
-        else {},
-        fairness_violation=not getattr(report, "passed", True),
+        fairness_metrics=json.loads(report.model_dump_json()),
+        fairness_violation=not report.passed,
     )
     try:
         last_error: Exception | None = None
@@ -72,22 +74,15 @@ async def _append_audit(state: MatchState, report: object) -> str:
                     await asyncio.sleep(0.5 * (attempt + 1))
         log.warning("audit_log_unavailable", error=str(last_error))
         return "offline"
-    except Exception as exc:
+    except OSError as exc:
         log.warning("audit_log_unavailable", error=str(exc))
         return "offline"
 
 
-async def run_fairness(state: MatchState) -> MatchState:
-    """Audit ranked list and rebalance if needed.
-
-    Args:
-        state: Current match state with ranked_items.
-
-    Returns:
-        Updated state with fairness_report and possibly rebalanced ranked_items.
-    """
+async def run_fairness(state: MatchState) -> MatchStateUpdate:
+    """Audit ranked list; rebalance once from retrieved_items if audit fails."""
     t0 = time.perf_counter()
-    k = state.get("k", 5)
+    k = state["k"]
     ranked = list(state.get("ranked_items", []))
     rebalance_pool = list(state.get("retrieved_items", ranked))
     rationales = list(state.get("rationales", []))
@@ -110,7 +105,6 @@ async def run_fairness(state: MatchState) -> MatchState:
         rebalanced=report.rebalanced,
     )
     return {
-        **state,
         "ranked_items": final_ranked,
         "rationales": rationales,
         "fairness_report": report,

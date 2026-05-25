@@ -47,7 +47,7 @@ async def test_agent_nodes_with_mocks() -> None:
         "marketplace_matching_agent.agents.search.hybrid_retrieve",
         new=AsyncMock(return_value=[_item(i, "A" if i % 2 == 0 else "B") for i in range(5)]),
     ):
-        state = await run_search(state)
+        state = {**state, **await run_search(state)}
     assert len(state["retrieved_items"]) == 5
 
     with patch(
@@ -58,13 +58,13 @@ async def test_agent_nodes_with_mocks() -> None:
             )._mock_rationale(q, c)
         ),
     ):
-        state = await run_evaluation(state)
+        state = {**state, **await run_evaluation(state)}
     assert len(state["ranked_items"]) == 5
 
     with patch(
         "marketplace_matching_agent.agents.fairness.append", new=AsyncMock(return_value="hash")
     ):
-        state = await run_fairness(state)
+        state = {**state, **await run_fairness(state)}
     assert state["fairness_report"].passed is True or state["fairness_report"].rebalanced is True
 
 
@@ -75,7 +75,7 @@ async def test_graph_node_wrappers() -> None:
         "marketplace_matching_agent.agents.search.hybrid_retrieve",
         new=AsyncMock(return_value=[_item(i) for i in range(3)]),
     ):
-        state = await search_node(state)
+        state = {**state, **await search_node(state)}
     with patch(
         "marketplace_matching_agent.agents.evaluation.cite_match",
         new=AsyncMock(
@@ -84,11 +84,11 @@ async def test_graph_node_wrappers() -> None:
             )._mock_rationale(q, c)
         ),
     ):
-        state = await evaluation_node(state)
+        state = {**state, **await evaluation_node(state)}
     with patch(
         "marketplace_matching_agent.agents.fairness.append", new=AsyncMock(return_value="h")
     ):
-        state = await fairness_node(state)
+        state = {**state, **await fairness_node(state)}
     assert "fairness_report" in state
 
 
