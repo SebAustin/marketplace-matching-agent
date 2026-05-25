@@ -28,7 +28,7 @@ def _normalize_item(raw: dict[str, object]) -> ItemDict:
     """Ensure retrieved records expose id, text, score, and meta."""
     record: ItemDict = dict(raw)
     score_val = raw.get("rerank_score", raw.get("score", 0.0))
-    record["score"] = float(score_val) if isinstance(score_val, (int, float)) else 0.0
+    record["score"] = float(score_val) if isinstance(score_val, int | float) else 0.0
     return record
 
 
