@@ -6,6 +6,7 @@ import asyncio
 
 import structlog
 
+from marketplace_matching_agent.config import get_settings
 from marketplace_matching_agent.retrieval.bm25 import bm25_search
 from marketplace_matching_agent.retrieval.dense import dense_search, fetch_payloads
 from marketplace_matching_agent.retrieval.rerank import cohere_rerank
@@ -25,19 +26,21 @@ async def hybrid_retrieve(
     Args:
         query: User query.
         tower: jobs or candidates tower.
-        k: Retrieval pool size.
+        k: Retrieval pool size for BM25 and dense channels.
         rerank_top_n: Final reranked results.
 
     Returns:
-        List of dicts with id, text, scores, and meta.
+        List of dicts with id, text, bm25_score, dense_score, rrf_score,
+        rerank_score, and meta.
     """
+    settings = get_settings()
     bm25_hits, dense_hits = await asyncio.gather(
         bm25_search(query, tower, k),
         dense_search(query, tower, k),
     )
     bm25_map = dict(bm25_hits)
     dense_map = dict(dense_hits)
-    fused = rrf_fuse([bm25_hits, dense_hits], k=60)
+    fused = rrf_fuse([bm25_hits, dense_hits], k=settings.rrf_k)
     fused_ids = [doc_id for doc_id, _score in fused[:k]]
     payloads = await fetch_payloads(tower, fused_ids)
 
