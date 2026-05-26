@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from marketplace_matching_agent.config import get_settings
+
 
 @pytest.fixture(autouse=True)
 def _clean_indexes() -> None:
@@ -25,3 +27,6 @@ def _env_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VOYAGE_API_KEY", "")
     monkeypatch.setenv("COHERE_API_KEY", "")
     monkeypatch.setenv("QDRANT_URL", os.environ.get("QDRANT_URL", "http://localhost:6333"))
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
