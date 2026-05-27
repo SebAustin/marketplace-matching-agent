@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
@@ -34,7 +35,7 @@ QUERY = "python backend austin"
 
 
 def _load_fixture(path: Path) -> dict[str, object]:
-    return json.loads(path.read_text())
+    return cast(dict[str, object], json.loads(path.read_text()))
 
 
 @pytest.mark.asyncio

@@ -185,7 +185,8 @@ def mock_retrieval_services(
     gold_map = _load_gold_map()
 
     def embed_side_effect(*_args: object, **kwargs: object) -> MagicMock:
-        texts = kwargs.get("texts") or (_args[0] if _args else [""])
+        texts_obj: object = kwargs.get("texts", _args[0] if _args else [""])
+        texts = texts_obj if isinstance(texts_obj, list) else [texts_obj]
         text = str(texts[0])
         embedding = _deterministic_vector(text)
         result = MagicMock()
