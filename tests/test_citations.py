@@ -59,9 +59,7 @@ async def test_rationale_cited_spans_match_fixture_byte_for_byte(
     get_settings.cache_clear()
     fixture = _load_fixture(THREE_CITATIONS_PATH)
     with respx.mock(assert_all_called=False) as router:
-        router.route(host="api.anthropic.com").mock(
-            return_value=httpx.Response(200, json=fixture)
-        )
+        router.route(host="api.anthropic.com").mock(return_value=httpx.Response(200, json=fixture))
         rationale = await cite_match(QUERY, CANDIDATE, COUNTERPARTY, mode="recruiter")
 
     expected = [

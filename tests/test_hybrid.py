@@ -25,7 +25,9 @@ async def test_hybrid_retrieve_returns_scored_items(
     monkeypatch.setenv("COHERE_API_KEY", "test-cohere")
     monkeypatch.setenv("QDRANT_URL", "http://qdrant.test:6333")
     with mock_retrieval_services():
-        items = await hybrid_retrieve("python backend austin query 0", "jobs", k=50, rerank_top_n=10)
+        items = await hybrid_retrieve(
+            "python backend austin query 0", "jobs", k=50, rerank_top_n=10
+        )
     assert len(items) == 10
     required = {"id", "text", "bm25_score", "dense_score", "rrf_score", "rerank_score", "meta"}
     assert required.issubset(items[0].keys())

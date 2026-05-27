@@ -68,8 +68,7 @@ class _QdrantMemory:
 
     def search(self, name: str, vector: list[float], limit: int) -> list[dict[str, Any]]:
         scored = [
-            (point, _cosine(vector, point["vector"]))
-            for point in self.collections.get(name, [])
+            (point, _cosine(vector, point["vector"])) for point in self.collections.get(name, [])
         ]
         scored.sort(key=lambda item: item[1], reverse=True)
         return [
