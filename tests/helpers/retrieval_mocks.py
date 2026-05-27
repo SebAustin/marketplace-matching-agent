@@ -216,9 +216,12 @@ def mock_cohere_rerank_route(
     get_settings.cache_clear()
 
     def dispatch(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "api.cohere.com" and request.url.path == "/v2/rerank":
-            if side_effect:
-                return side_effect.pop(0)
+        if (
+            request.url.host == "api.cohere.com"
+            and request.url.path == "/v2/rerank"
+            and side_effect
+        ):
+            return side_effect.pop(0)
         return httpx.Response(500, json={"message": "unexpected cohere call"})
 
     with respx.mock(assert_all_called=False) as router:

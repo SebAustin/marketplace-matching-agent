@@ -45,16 +45,15 @@ async def test_hybrid_ndcg_and_latency(
     with mock_retrieval_services():
         for entry in gold["queries"]:
             t0 = time.perf_counter()
-
-            async def _run() -> list[dict[str, object]]:
-                return await hybrid_retrieve(
-                    entry["query"],
+            items = await asyncio.wait_for(
+                hybrid_retrieve(
+                    str(entry["query"]),
                     "jobs",
                     k=FIXTURE_DOC_COUNT,
                     rerank_top_n=10,
-                )
-
-            items = await asyncio.wait_for(_run(), timeout=1.2)
+                ),
+                timeout=1.2,
+            )
             latencies.append(time.perf_counter() - t0)
             ranked_ids = [str(item["id"]) for item in items]
             ndcgs.append(ndcg_at_k(ranked_ids, entry["relevant_ids"], 10))

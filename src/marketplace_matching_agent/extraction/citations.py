@@ -116,11 +116,8 @@ def _build_messages(
 
 
 def _citation_field(citation: object, field: str) -> str | int:
-    if isinstance(citation, dict):
-        value = citation.get(field)
-    else:
-        value = getattr(citation, field, None)
-    if isinstance(value, (str, int)):
+    value = citation.get(field) if isinstance(citation, dict) else getattr(citation, field, None)
+    if isinstance(value, str | int):
         return value
     raise TypeError(f"unexpected citation field {field!r}: {value!r}")
 
