@@ -25,7 +25,9 @@ async def test_hybrid_retrieve_returns_scored_items(
     monkeypatch.setenv("COHERE_API_KEY", "test-cohere")
     monkeypatch.setenv("QDRANT_URL", "http://qdrant.test:6333")
     with mock_retrieval_services():
-        items = await hybrid_retrieve("python backend austin query 0", "jobs", k=50, rerank_top_n=10)
+        items = await hybrid_retrieve(
+            "python backend austin query 0", "jobs", k=50, rerank_top_n=10
+        )
     assert len(items) == 10
     required = {"id", "text", "bm25_score", "dense_score", "rrf_score", "rerank_score", "meta"}
     assert required.issubset(items[0].keys())
@@ -45,16 +47,15 @@ async def test_hybrid_ndcg_and_latency(
     with mock_retrieval_services():
         for entry in gold["queries"]:
             t0 = time.perf_counter()
-
-            async def _run() -> list[dict[str, object]]:
-                return await hybrid_retrieve(
-                    entry["query"],
+            items = await asyncio.wait_for(
+                hybrid_retrieve(
+                    str(entry["query"]),
                     "jobs",
                     k=FIXTURE_DOC_COUNT,
                     rerank_top_n=10,
-                )
-
-            items = await asyncio.wait_for(_run(), timeout=1.2)
+                ),
+                timeout=1.2,
+            )
             latencies.append(time.perf_counter() - t0)
             ranked_ids = [str(item["id"]) for item in items]
             ndcgs.append(ndcg_at_k(ranked_ids, entry["relevant_ids"], 10))

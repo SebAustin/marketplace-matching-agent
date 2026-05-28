@@ -37,10 +37,16 @@ async def run_evaluation(state: MatchState) -> MatchStateUpdate:
     items = list(state.get("retrieved_items", [])[:k])
     counterparty: ItemDict = {"id": "query", "text": state["query"], "meta": {}}
     sem = asyncio.Semaphore(5)
+    mode = state["mode"]
 
     async def _cite(item: ItemDict) -> tuple[ItemDict, Rationale, float]:
         async with sem:
-            rationale = await cite_match(state["query"], item, counterparty)
+            rationale = await cite_match(
+                state["query"],
+                item,
+                counterparty,
+                mode=mode,
+            )
         relevance = float(item.get("score", item.get("rerank_score", 0.0)))
         citation_density = len(rationale.citations) / 10.0
         ranked_item = dict(item)

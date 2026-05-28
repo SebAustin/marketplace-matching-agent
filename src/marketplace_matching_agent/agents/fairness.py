@@ -40,7 +40,9 @@ async def _sync_rationales(
         if item_id in existing:
             rationales.append(existing[item_id])
         else:
-            rationales.append(await cite_match(state["query"], item, counterparty))
+            rationales.append(
+                await cite_match(state["query"], item, counterparty, mode=state["mode"])
+            )
     return rationales
 
 

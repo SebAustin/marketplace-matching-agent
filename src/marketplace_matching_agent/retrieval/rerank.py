@@ -31,9 +31,7 @@ def _offline_rerank(
         candidates,
         key=lambda item: (-_lexical_score(query, item[1]), item[0]),
     )
-    return [
-        (doc_id, _lexical_score(query, text)) for doc_id, text in ranked[:top_n]
-    ]
+    return [(doc_id, _lexical_score(query, text)) for doc_id, text in ranked[:top_n]]
 
 
 async def cohere_rerank(

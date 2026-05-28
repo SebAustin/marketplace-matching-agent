@@ -68,8 +68,7 @@ class _QdrantMemory:
 
     def search(self, name: str, vector: list[float], limit: int) -> list[dict[str, Any]]:
         scored = [
-            (point, _cosine(vector, point["vector"]))
-            for point in self.collections.get(name, [])
+            (point, _cosine(vector, point["vector"])) for point in self.collections.get(name, [])
         ]
         scored.sort(key=lambda item: item[1], reverse=True)
         return [
@@ -186,7 +185,8 @@ def mock_retrieval_services(
     gold_map = _load_gold_map()
 
     def embed_side_effect(*_args: object, **kwargs: object) -> MagicMock:
-        texts = kwargs.get("texts") or (_args[0] if _args else [""])
+        texts_obj: object = kwargs.get("texts", _args[0] if _args else [""])
+        texts = texts_obj if isinstance(texts_obj, list) else [texts_obj]
         text = str(texts[0])
         embedding = _deterministic_vector(text)
         result = MagicMock()
@@ -216,9 +216,12 @@ def mock_cohere_rerank_route(
     get_settings.cache_clear()
 
     def dispatch(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "api.cohere.com" and request.url.path == "/v2/rerank":
-            if side_effect:
-                return side_effect.pop(0)
+        if (
+            request.url.host == "api.cohere.com"
+            and request.url.path == "/v2/rerank"
+            and side_effect
+        ):
+            return side_effect.pop(0)
         return httpx.Response(500, json={"message": "unexpected cohere call"})
 
     with respx.mock(assert_all_called=False) as router:

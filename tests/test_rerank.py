@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-import respx
 
-from marketplace_matching_agent.config import get_settings
 from marketplace_matching_agent.retrieval.rerank import RERANK_MODEL, cohere_rerank
 from tests.helpers.retrieval_mocks import mock_cohere_rerank_route, mock_retrieval_services
 

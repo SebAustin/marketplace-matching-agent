@@ -1,0 +1,40 @@
+{
+  "id": "msg_fixture_three_citations",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-4-5-20251022",
+  "content": [
+    {
+      "type": "text",
+      "text": "- Python experience matches the backend requirement.\n- Austin location aligns with the posting.\n- LangGraph skills support the stack.",
+      "citations": [
+        {
+          "type": "char_location",
+          "document_index": 0,
+          "start_char_index": 13,
+          "end_char_index": 19,
+          "cited_text": "Python"
+        },
+        {
+          "type": "char_location",
+          "document_index": 0,
+          "start_char_index": 21,
+          "end_char_index": 30,
+          "cited_text": "LangGraph"
+        },
+        {
+          "type": "char_location",
+          "document_index": 1,
+          "start_char_index": 0,
+          "end_char_index": 28,
+          "cited_text": "Need Python backend in Austin."
+        }
+      ]
+    }
+  ],
+  "stop_reason": "end_turn",
+  "usage": {
+    "input_tokens": 520,
+    "output_tokens": 128
+  }
+}

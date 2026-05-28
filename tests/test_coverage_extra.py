@@ -53,7 +53,7 @@ async def test_agent_nodes_with_mocks() -> None:
     with patch(
         "marketplace_matching_agent.agents.evaluation.cite_match",
         new=AsyncMock(
-            side_effect=lambda q, c, cp: __import__(
+            side_effect=lambda q, c, cp, **_: __import__(
                 "marketplace_matching_agent.extraction.citations", fromlist=["_mock_rationale"]
             )._mock_rationale(q, c)
         ),
@@ -79,7 +79,7 @@ async def test_graph_node_wrappers() -> None:
     with patch(
         "marketplace_matching_agent.agents.evaluation.cite_match",
         new=AsyncMock(
-            side_effect=lambda q, c, cp: __import__(
+            side_effect=lambda q, c, cp, **_: __import__(
                 "marketplace_matching_agent.extraction.citations", fromlist=["_mock_rationale"]
             )._mock_rationale(q, c)
         ),
