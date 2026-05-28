@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 
 from marketplace_matching_agent.fairness.synthetic_protected import assign
@@ -16,6 +17,27 @@ def _default_attr_fn(item: dict[str, object]) -> str:
     return "A"
 
 
+def _prefix_feasible(
+    counts: dict[str, int],
+    group: str,
+    prefix_len: int,
+    k: int,
+    desired_distribution: dict[str, float],
+) -> bool:
+    """Return True if adding `group` at prefix length `prefix_len` stays feasible."""
+    trial = dict(counts)
+    trial[group] = trial.get(group, 0) + 1
+    remaining = k - prefix_len
+    for attr, target_frac in desired_distribution.items():
+        selected = trial.get(attr, 0)
+        if selected > math.ceil(prefix_len * target_frac - 1e-9):
+            return False
+        min_required = math.floor(k * target_frac - 1e-9)
+        if selected + remaining < min_required:
+            return False
+    return True
+
+
 def detconstsort(
     ranked: list[dict[str, object]],
     attr_fn: Callable[[dict[str, object]], str] | None,
@@ -24,40 +46,25 @@ def detconstsort(
 ) -> list[dict[str, object]]:
     """Rebalance top-k list toward desired group proportions.
 
-    Args:
-        ranked: Original relevance-ordered list.
-        attr_fn: Attribute extractor; defaults to synthetic assign.
-        desired_distribution: Target proportions per group.
-        k: Output list length.
-
-    Returns:
-        Reordered list of length k.
+    Greedy DetConstSort: at each prefix, pick the highest-ranked feasible item.
     """
     fn = attr_fn or _default_attr_fn
     result: list[dict[str, object]] = []
     remaining = list(ranked)
-    group_counts: dict[str, int] = {g: 0 for g in desired_distribution}
+    group_counts: dict[str, int] = {group: 0 for group in desired_distribution}
 
-    while len(result) < k and remaining:
-        prefix_len = len(result) + 1
-        best_idx = 0
-        best_penalty = float("inf")
+    for prefix_len in range(1, k + 1):
+        picked_idx = 0
         for idx, item in enumerate(remaining):
-            g = fn(item)
-            trial_counts = dict(group_counts)
-            trial_counts[g] = trial_counts.get(g, 0) + 1
-            penalty = 0.0
-            for group, desired in desired_distribution.items():
-                actual = trial_counts.get(group, 0) / prefix_len
-                penalty += abs(actual - desired)
-            penalty += idx * 0.001
-            if penalty < best_penalty:
-                best_penalty = penalty
-                best_idx = idx
-        chosen = remaining.pop(best_idx)
-        g = fn(chosen)
-        group_counts[g] = group_counts.get(g, 0) + 1
+            group = fn(item)
+            if _prefix_feasible(group_counts, group, prefix_len, k, desired_distribution):
+                picked_idx = idx
+                break
+        chosen = remaining.pop(picked_idx)
+        chosen_group = fn(chosen)
+        group_counts[chosen_group] = group_counts.get(chosen_group, 0) + 1
         result.append(chosen)
+
     return result
 
 
