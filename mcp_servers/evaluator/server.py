@@ -1,30 +1,54 @@
 """Evaluator MCP server."""
 
-from mcp.server.fastmcp import FastMCP
+from __future__ import annotations
 
-from marketplace_matching_agent.extraction.citations import cite_match
+from typing import Literal
+
+from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, Field
+
+from marketplace_matching_agent.evaluation.scoring import score_match as score_match_fn
+from marketplace_matching_agent.extraction.citations import cite_match as cite_match_fn
+from mcp_servers.bootstrap import configure_stdio_logging
+
+configure_stdio_logging()
 
 mcp = FastMCP("evaluator")
 
 
+class ScoreMatchInput(BaseModel):
+    query: str = Field(description="User query")
+    item_text: str = Field(description="Candidate or job text")
+
+
+class CiteMatchInput(BaseModel):
+    query: str = Field(description="User query")
+    candidate_text: str = Field(description="Primary document text")
+    counterparty_text: str = Field(description="Counterparty document text")
+    candidate_id: str = Field(default="unknown", description="Primary document id")
+    mode: Literal["seeker", "recruiter"] = Field(
+        default="recruiter",
+        description="Seeker swaps resume/JD roles",
+    )
+
+
 @mcp.tool()
-async def score_match(query: str, item_text: str) -> dict[str, object]:
+async def score_match(params: ScoreMatchInput) -> dict[str, object]:
     """Score a match heuristically."""
-    overlap = len(set(query.lower().split()) & set(item_text.lower().split()))
-    return {"score": overlap / max(len(query.split()), 1)}
+    return score_match_fn(params.query, params.item_text)
 
 
 @mcp.tool()
-async def cite_match_tool(
-    query: str,
-    candidate_text: str,
-    counterparty_text: str,
-    candidate_id: str = "unknown",
-) -> dict[str, object]:
-    """Produce citation-grounded rationale."""
-    candidate = {"id": candidate_id, "text": candidate_text, "meta": {}}
-    counterparty = {"id": "counterparty", "text": counterparty_text, "meta": {}}
-    rationale = await cite_match(query, candidate, counterparty)
+async def cite_match(params: CiteMatchInput) -> dict[str, object]:
+    """Produce citation-grounded match rationale."""
+    candidate = {"id": params.candidate_id, "text": params.candidate_text, "meta": {}}
+    counterparty = {"id": "counterparty", "text": params.counterparty_text, "meta": {}}
+    rationale = await cite_match_fn(
+        params.query,
+        candidate,
+        counterparty,
+        mode=params.mode,
+    )
     return rationale.model_dump()
 
 

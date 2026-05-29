@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -17,7 +18,8 @@ from marketplace_matching_agent.audit.log import (
     verify_chain,
 )
 from marketplace_matching_agent.extraction.citations import cite_match
-from marketplace_matching_agent.fairness.audit import demographic_parity_gap, min_skew_at_k
+from marketplace_matching_agent.fairness.audit import audit, demographic_parity_gap, min_skew_at_k
+from marketplace_matching_agent.fairness.detconstsort import rebalance
 from marketplace_matching_agent.graph import (
     build_supervisor,
     evaluation_node,
@@ -40,30 +42,51 @@ def _item(i: int, group: str = "A") -> dict[str, object]:
     }
 
 
+class _MockMCPRegistry:
+    """Stub MCP registry for agent unit tests."""
+
+    def __init__(self, search_results: list[dict[str, object]]) -> None:
+        self._search_results = search_results
+
+    async def call(self, tool_name: str, **kwargs: Any) -> dict[str, object]:
+        if tool_name == "search_jobs":
+            return {"results": self._search_results}
+        if tool_name == "cite_match":
+            from marketplace_matching_agent.extraction.citations import _mock_rationale
+
+            candidate = {
+                "id": kwargs["candidate_id"],
+                "text": kwargs["candidate_text"],
+                "meta": {},
+            }
+            return _mock_rationale(str(kwargs["query"]), candidate).model_dump()
+        if tool_name == "audit_ranked_list":
+            return audit(kwargs["ranked"], kwargs["k"]).model_dump()
+        if tool_name == "rebalance_detconstsort":
+            rebalanced = rebalance(kwargs["ranked"], kwargs["k"])
+            report = audit(rebalanced, kwargs["k"])
+            return {"ranked": rebalanced, "report": report.model_dump()}
+        if tool_name == "append_audit_row":
+            return {"row_hash": "hash"}
+        msg = f"unexpected tool: {tool_name}"
+        raise KeyError(msg)
+
+
 @pytest.mark.asyncio
 async def test_agent_nodes_with_mocks() -> None:
     state: MatchState = {"mode": "seeker", "query": "python austin", "k": 5}
-    with patch(
-        "marketplace_matching_agent.agents.search.hybrid_retrieve",
-        new=AsyncMock(return_value=[_item(i, "A" if i % 2 == 0 else "B") for i in range(5)]),
+    registry = _MockMCPRegistry([_item(i, "A" if i % 2 == 0 else "B") for i in range(5)])
+    mock_get = AsyncMock(return_value=registry)
+    with (
+        patch("marketplace_matching_agent.agents.search.get_registry", mock_get),
+        patch("marketplace_matching_agent.agents.evaluation.get_registry", mock_get),
+        patch("marketplace_matching_agent.agents.fairness.get_registry", mock_get),
+        patch("marketplace_matching_agent.mcp_client.get_registry", mock_get),
     ):
         state = {**state, **await run_search(state)}
-    assert len(state["retrieved_items"]) == 5
-
-    with patch(
-        "marketplace_matching_agent.agents.evaluation.cite_match",
-        new=AsyncMock(
-            side_effect=lambda q, c, cp, **_: __import__(
-                "marketplace_matching_agent.extraction.citations", fromlist=["_mock_rationale"]
-            )._mock_rationale(q, c)
-        ),
-    ):
+        assert len(state["retrieved_items"]) == 5
         state = {**state, **await run_evaluation(state)}
-    assert len(state["ranked_items"]) == 5
-
-    with patch(
-        "marketplace_matching_agent.agents.fairness.append", new=AsyncMock(return_value="hash")
-    ):
+        assert len(state["ranked_items"]) == 5
         state = {**state, **await run_fairness(state)}
     assert state["fairness_report"].passed is True or state["fairness_report"].rebalanced is True
 
@@ -71,23 +94,16 @@ async def test_agent_nodes_with_mocks() -> None:
 @pytest.mark.asyncio
 async def test_graph_node_wrappers() -> None:
     state: MatchState = {"mode": "recruiter", "query": "python", "k": 3}
-    with patch(
-        "marketplace_matching_agent.agents.search.hybrid_retrieve",
-        new=AsyncMock(return_value=[_item(i) for i in range(3)]),
+    registry = _MockMCPRegistry([_item(i) for i in range(3)])
+    mock_get = AsyncMock(return_value=registry)
+    with (
+        patch("marketplace_matching_agent.agents.search.get_registry", mock_get),
+        patch("marketplace_matching_agent.agents.evaluation.get_registry", mock_get),
+        patch("marketplace_matching_agent.agents.fairness.get_registry", mock_get),
+        patch("marketplace_matching_agent.mcp_client.get_registry", mock_get),
     ):
         state = {**state, **await search_node(state)}
-    with patch(
-        "marketplace_matching_agent.agents.evaluation.cite_match",
-        new=AsyncMock(
-            side_effect=lambda q, c, cp, **_: __import__(
-                "marketplace_matching_agent.extraction.citations", fromlist=["_mock_rationale"]
-            )._mock_rationale(q, c)
-        ),
-    ):
         state = {**state, **await evaluation_node(state)}
-    with patch(
-        "marketplace_matching_agent.agents.fairness.append", new=AsyncMock(return_value="h")
-    ):
         state = {**state, **await fairness_node(state)}
     assert "fairness_report" in state
 
@@ -205,7 +221,7 @@ async def test_cohere_rerank_with_api_key() -> None:
 
 @pytest.mark.asyncio
 async def test_append_audit_row_mcp() -> None:
-    from mcp_servers.audit_log.server import append_audit_row
+    from mcp_servers.audit_log.server import AppendAuditRowInput, append_audit_row
 
     row = AuditRow(
         mode="seeker",
@@ -221,5 +237,5 @@ async def test_append_audit_row_mcp() -> None:
         with patch("mcp_servers.audit_log.server.AsyncConnection.connect") as mock_conn:
             mock_conn.return_value.__aenter__ = AsyncMock(return_value=object())
             mock_conn.return_value.__aexit__ = AsyncMock(return_value=None)
-            result = await append_audit_row(row.model_dump_json())
+            result = await append_audit_row(AppendAuditRowInput(row_json=row.model_dump_json()))
     assert result["row_hash"] == "abc"
