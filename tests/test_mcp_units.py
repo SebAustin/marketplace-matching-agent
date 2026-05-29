@@ -44,7 +44,9 @@ async def test_resume_parser_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_evaluator_tools() -> None:
-    scored = await mcp_score(ScoreMatchInput(query="python austin", item_text="python engineer austin"))
+    scored = await mcp_score(
+        ScoreMatchInput(query="python austin", item_text="python engineer austin")
+    )
     assert scored["score"] > 0
     cited = await cite_match(
         CiteMatchInput(

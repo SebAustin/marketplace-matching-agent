@@ -51,10 +51,7 @@ async def run_search(state: MatchState) -> MatchStateUpdate:
         tower=tower,
     )
     raw_results = payload.get("results", [])
-    items = [
-        _normalize_item(item)
-        for item in cast(list[dict[str, object]], raw_results)
-    ]
+    items = [_normalize_item(item) for item in cast(list[dict[str, object]], raw_results)]
     await append_audit_row_mcp(
         build_audit_row(
             mode=mode,
