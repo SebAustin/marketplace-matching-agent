@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
-import json
 import time
+from typing import cast
 
 import structlog
-from psycopg import AsyncConnection, OperationalError
 
-from marketplace_matching_agent.audit.log import AuditRow, append
-from marketplace_matching_agent.config import get_settings
-from marketplace_matching_agent.extraction.citations import cite_match
-from marketplace_matching_agent.fairness.audit import audit
-from marketplace_matching_agent.fairness.detconstsort import rebalance
+from marketplace_matching_agent.mcp_client import (
+    MCPRegistry,
+    append_audit_row_mcp,
+    build_audit_row,
+    get_registry,
+)
 from marketplace_matching_agent.state import FairnessReport, MatchState, MatchStateUpdate, Rationale
 from marketplace_matching_agent.types import ItemDict
 
@@ -30,72 +29,65 @@ async def _sync_rationales(
     state: MatchState,
     ranked: list[ItemDict],
     k: int,
+    registry: MCPRegistry,
 ) -> list[Rationale]:
     """Align rationales with final ranked list; cite any newly promoted items."""
     existing = {r.item_id: r for r in state.get("rationales", [])}
-    counterparty: ItemDict = {"id": "query", "text": state["query"], "meta": {}}
     rationales: list[Rationale] = []
     for item in ranked[:k]:
         item_id = str(item.get("id", ""))
         if item_id in existing:
             rationales.append(existing[item_id])
-        else:
-            rationales.append(
-                await cite_match(state["query"], item, counterparty, mode=state["mode"])
-            )
+            continue
+        payload = await registry.call(
+            "cite_match",
+            query=state["query"],
+            candidate_text=str(item.get("text", "")),
+            counterparty_text=state["query"],
+            candidate_id=item_id,
+            mode=state["mode"],
+        )
+        rationales.append(Rationale.model_validate(payload))
     return rationales
 
 
-async def _append_audit(state: MatchState, report: FairnessReport) -> str:
-    """Persist append-only audit row; return hash or offline sentinel."""
-    settings = get_settings()
-    ranked = state.get("ranked_items", [])
-    rerank_scores = {
-        str(item.get("id", "")): float(item.get("rerank_score", item.get("score", 0.0)))
-        for item in ranked
-    }
-    row = AuditRow(
-        mode=state["mode"],
-        query_hash=_query_hash(state["query"]),
-        prompt_version=settings.prompt_version,
-        model_id=settings.model_id,
-        retrieved_doc_ids=[str(i.get("id", "")) for i in state.get("retrieved_items", [])],
-        rerank_scores=rerank_scores,
-        fairness_metrics=json.loads(report.model_dump_json()),
-        fairness_violation=not report.passed,
-    )
-    try:
-        last_error: Exception | None = None
-        for attempt in range(5):
-            try:
-                async with await AsyncConnection.connect(settings.postgres_url) as conn:
-                    return await append(conn, row)
-            except (OSError, OperationalError) as exc:
-                last_error = exc
-                if attempt < 4:
-                    await asyncio.sleep(0.5 * (attempt + 1))
-        log.warning("audit_log_unavailable", error=str(last_error))
-        return "offline"
-    except OSError as exc:
-        log.warning("audit_log_unavailable", error=str(exc))
-        return "offline"
-
-
 async def run_fairness(state: MatchState) -> MatchStateUpdate:
-    """Audit ranked list; rebalance once from retrieved_items if audit fails."""
+    """Audit ranked list via MCP; rebalance once if audit fails."""
     t0 = time.perf_counter()
     k = state["k"]
     ranked = list(state.get("ranked_items", []))
     rebalance_pool = list(state.get("retrieved_items", ranked))
     rationales = list(state.get("rationales", []))
-    report = audit(ranked, k)
+    registry = await get_registry()
+
+    report_payload = await registry.call("audit_ranked_list", ranked=ranked, k=k)
+    report = FairnessReport.model_validate(report_payload)
     if not report.passed:
-        ranked = rebalance(rebalance_pool, k)
-        report = audit(ranked, k)
-        report.rebalanced = True
-        rationales = await _sync_rationales(state, ranked, k)
+        rebalance_payload = await registry.call(
+            "rebalance_detconstsort",
+            ranked=rebalance_pool,
+            k=k,
+        )
+        ranked = list(cast(list[ItemDict], rebalance_payload.get("ranked", [])))
+        report = FairnessReport.model_validate(rebalance_payload.get("report", report_payload))
+        report = report.model_copy(update={"rebalanced": True})
+        rationales = await _sync_rationales(state, ranked, k, registry)
+
     final_ranked = ranked[:k]
-    audit_hash = await _append_audit({**state, "ranked_items": final_ranked}, report)
+    await append_audit_row_mcp(
+        build_audit_row(
+            mode=state["mode"],
+            query_hash=_query_hash(state["query"]),
+            node="fairness",
+            retrieved_doc_ids=[str(i.get("id", "")) for i in state.get("retrieved_items", [])],
+            rerank_scores={
+                str(item.get("id", "")): float(item.get("rerank_score", item.get("score", 0.0)))
+                for item in final_ranked
+            },
+            fairness_metrics=report.model_dump(),
+            fairness_violation=not report.passed,
+        )
+    )
     latency_ms = (time.perf_counter() - t0) * 1000
     log.info(
         "fairness_node",
@@ -110,5 +102,5 @@ async def run_fairness(state: MatchState) -> MatchStateUpdate:
         "ranked_items": final_ranked,
         "rationales": rationales,
         "fairness_report": report,
-        "audit_row_hash": audit_hash,
+        "audit_row_hash": "via_mcp",
     }

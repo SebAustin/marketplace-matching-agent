@@ -1,25 +1,36 @@
 """Resume parser MCP server."""
 
-import re
+from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel, Field
+
+from marketplace_matching_agent.extraction.resume import extract_skills_from_text, parse_resume_text
+from mcp_servers.bootstrap import configure_stdio_logging
+
+configure_stdio_logging()
 
 mcp = FastMCP("resume_parser")
 
 
+class ParseResumeInput(BaseModel):
+    text: str = Field(description="Resume plain text")
+
+
+class ExtractSkillsInput(BaseModel):
+    text: str = Field(description="Resume or profile plain text")
+
+
 @mcp.tool()
-async def parse_resume(text: str) -> dict[str, object]:
+async def parse_resume(params: ParseResumeInput) -> dict[str, object]:
     """Parse resume into structured sections."""
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
-    return {"sections": lines[:10], "word_count": len(text.split())}
+    return parse_resume_text(params.text)
 
 
 @mcp.tool()
-async def extract_skills(text: str) -> dict[str, object]:
+async def extract_skills(params: ExtractSkillsInput) -> dict[str, object]:
     """Extract skill tokens from resume text."""
-    tokens = set(re.findall(r"\b[A-Z][a-zA-Z+#.]+\b", text))
-    skills = sorted(tokens)[:20]
-    return {"skills": skills}
+    return extract_skills_from_text(params.text)
 
 
 @mcp.resource("health://status")

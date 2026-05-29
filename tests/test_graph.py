@@ -3,31 +3,34 @@
 from __future__ import annotations
 
 from typing import Literal, cast
-from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from marketplace_matching_agent.graph import build_supervisor
+from marketplace_matching_agent.mcp_client import reset_registry
+
+
+@pytest.fixture(autouse=True)
+def _reset_mcp() -> None:
+    reset_registry()
+    yield
+    reset_registry()
 
 
 @pytest.mark.parametrize("mode", ["seeker", "recruiter"])
 @pytest.mark.asyncio
 async def test_supervisor_invoke(mode: str) -> None:
-    with patch(
-        "marketplace_matching_agent.agents.fairness.append",
-        new=AsyncMock(return_value="offline"),
-    ):
-        graph = build_supervisor()
-        out = await graph.ainvoke(
-            cast(
-                dict[str, object],
-                {
-                    "mode": cast(Literal["seeker", "recruiter"], mode),
-                    "query": "python backend austin",
-                    "k": 5,
-                },
-            )
+    graph = build_supervisor()
+    out = await graph.ainvoke(
+        cast(
+            dict[str, object],
+            {
+                "mode": cast(Literal["seeker", "recruiter"], mode),
+                "query": "python backend austin query 0",
+                "k": 5,
+            },
         )
+    )
     ranked = out.get("ranked_items", [])
     assert len(ranked) == 5
     rationales = out.get("rationales", [])

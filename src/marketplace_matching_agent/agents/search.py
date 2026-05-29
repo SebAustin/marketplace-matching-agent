@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import time
+from typing import cast
 
 import structlog
 
-from marketplace_matching_agent.retrieval.hybrid import hybrid_retrieve
+from marketplace_matching_agent.mcp_client import (
+    append_audit_row_mcp,
+    build_audit_row,
+    get_registry,
+)
 from marketplace_matching_agent.state import MatchState, MatchStateUpdate
 from marketplace_matching_agent.types import ItemDict
 
@@ -33,23 +38,31 @@ def _normalize_item(raw: dict[str, object]) -> ItemDict:
 
 
 async def run_search(state: MatchState) -> MatchStateUpdate:
-    """Execute hybrid retrieval based on mode.
-
-    Mode routing selects the tower inside this node: seeker -> jobs,
-    recruiter -> candidates. No conditional graph edges are used.
-
-    Args:
-        state: Current match state with mode, query, and k.
-
-    Returns:
-        Partial state update with retrieved_items.
-    """
+    """Execute hybrid retrieval via job_search MCP tool."""
     t0 = time.perf_counter()
     mode = state["mode"]
     tower = _tower_for_mode(mode)
     k = state["k"]
-    pool = await hybrid_retrieve(state["query"], tower, k=50, rerank_top_n=max(k, 10))
-    items = [_normalize_item(item) for item in pool]
+    registry = await get_registry()
+    payload = await registry.call(
+        "search_jobs",
+        query=state["query"],
+        k=max(k, 10),
+        tower=tower,
+    )
+    raw_results = payload.get("results", [])
+    items = [
+        _normalize_item(item)
+        for item in cast(list[dict[str, object]], raw_results)
+    ]
+    await append_audit_row_mcp(
+        build_audit_row(
+            mode=mode,
+            query_hash=_query_hash(state["query"]),
+            node="search",
+            retrieved_doc_ids=[str(item.get("id", "")) for item in items],
+        )
+    )
     latency_ms = (time.perf_counter() - t0) * 1000
     log.info(
         "search_node",
